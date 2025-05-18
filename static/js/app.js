@@ -34,14 +34,6 @@ const SKILLS = [
 const selSkill = document.getElementById("selSkill");
 SKILLS.forEach(s => selSkill.add(new Option(s, s)));
 
-// Sidebar toggle for mobile
-const hamburger = document.getElementById("hamburger");
-const sidebar   = document.getElementById("sidebar");
-hamburger.onclick = () => {
-  sidebar.classList.toggle("open");
-  log("Sidebar toggled: " + sidebar.classList.contains("open"));
-};
-
 // Poll GE preload status until loaded
 function pollGEStatus(){
   fetch("/api/ge/status")
@@ -256,7 +248,7 @@ document.getElementById("btnAddToCart").onclick = () => {
       let grand = Array.from(tbody.rows).reduce(
         (sum, r) => sum + parseFloat(r.cells[2].innerText.replace(/,/g,"")), 0
       );
-      document.getElementById("geGrandTotal").innerText = 
+      document.getElementById("geGrandTotal").innerText =
         grand >= 1e6 ? (grand/1e6).toFixed(2)+"m" :
         grand >= 1e3 ? (grand/1e3).toFixed(2)+"k" :
         grand.toFixed(2);
