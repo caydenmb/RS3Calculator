@@ -55,11 +55,35 @@ nav button:hover {
   background: var(--primary-hover);
 }
 
+/* Container to center and constrain width on 1080p+ */
 main {
+  max-width: 1920px;
+  margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1rem;
   padding: 2rem;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+}
+
+/* Ensure three columns on wide screens */
+@media (min-width: 1440px) {
+  main {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Two columns on medium screens */
+@media (min-width: 1024px) and (max-width: 1439px) {
+  main {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Single column on narrow screens */
+@media (max-width: 1023px) {
+  main {
+    grid-template-columns: 1fr;
+  }
 }
 
 .panel {
