@@ -1,3 +1,4 @@
+# app.py
 #!/usr/bin/env python3
 """
 RS3 XP Calculator v4.4 – Web Edition
@@ -8,6 +9,7 @@ Flask back-end serving the same logic you had in Tkinter:
  - GitHub update checker
  - Grand Exchange preload + suggestions + price lookup
  - In-memory logging, and report/log download endpoints
+ - Periodic GE reload every 12 hours
 """
 
 from flask import Flask, jsonify, request, render_template, send_file, abort
@@ -15,11 +17,7 @@ from jinja2 import TemplateNotFound
 import threading, traceback, io, time, requests
 
 # Initialize Flask, pointing at the correct template & static folders
-app = Flask(
-    __name__,
-    template_folder="templates",
-    static_folder="static"
-)
+app = Flask(__name__, template_folder="templates", static_folder="static")
 
 # -------------------------------------
 # Global state for GE preload + logs
@@ -27,7 +25,9 @@ app = Flask(
 ge_all_items = {}
 ge_loaded = False
 logs = []
+
 def log(msg: str):
+    """Append a timestamped message to the in-memory log."""
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{ts}] {msg}"
     print(line)
@@ -37,6 +37,7 @@ def log(msg: str):
 # Preload GE catalogue in background
 # -------------------------------------
 def ge_preload():
+    """Fetch the entire GE catalogue, skipping invalid buckets, logging every failure."""
     global ge_all_items, ge_loaded
     log("Starting full GE item preload…")
     for cat in range(38):
@@ -87,8 +88,21 @@ def ge_preload():
     count = len(ge_all_items)
     log(f"Completed preload: {count} items cached")
 
+# Start initial preload
 threading.Thread(target=ge_preload, daemon=True).start()
 
+# -------------------------------------
+# Periodic reload every 12 hours
+# -------------------------------------
+def schedule_periodic_ge_preload():
+    """Every 12h, re-run the full GE preload to refresh IDs."""
+    log("Scheduling periodic GE preload every 12 hours")
+    while True:
+        time.sleep(12 * 3600)
+        log("Running periodic GE preload")
+        ge_preload()
+
+threading.Thread(target=schedule_periodic_ge_preload, daemon=True).start()
 
 # -------------------------------------
 # Hiscores fetch
@@ -112,7 +126,6 @@ def fetch_hiscore_xp(username: str, skill: str):
     parts = lines[idx].split(",")
     xp = float(parts[2])
     return {"rank": parts[0], "level": parts[1], "xp": xp}
-
 
 # -------------------------------------
 # XP Calculation
@@ -175,7 +188,6 @@ def calculate_xp(data):
     rec(f"Total = {b:.2f} + {extra:.2f} + {bonus:.2f} = {total:.2f}")
     return {"total": total, "steps": steps}
 
-
 # -------------------------------------
 # Wiki Helper
 # -------------------------------------
@@ -198,7 +210,6 @@ class Wiki:
         pages = r.json()["query"]["pages"]
         return next(iter(pages.values())).get("extract","")
 
-
 # -------------------------------------
 # Routes (with TemplateNotFound guard)
 # -------------------------------------
@@ -208,7 +219,7 @@ def index():
         return render_template("index.html")
     except TemplateNotFound:
         log("index.html not found in templates/")
-        return "<h1>Deployed, but template missing!</h1>", 200
+        return "<h1>Template missing!</h1>", 200
 
 @app.route("/api/logs")
 def get_logs():

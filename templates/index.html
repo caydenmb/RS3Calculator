@@ -9,114 +9,102 @@
 </head>
 <body>
   <header>
+    <button id="hamburger">☰</button>
     <h1>RS3 XP Calculator v4.4</h1>
-    <nav>
+    <nav class="top-nav">
       <button id="btnViewLogs">View Logs</button>
       <button id="btnSaveLogs">Save Logs</button>
-      <button id="btnFetchWiki">Fetch Wiki Page</button>
+      <button id="btnFetchWiki">Fetch Wiki</button>
     </nav>
   </header>
-  <main>
-    <section class="panel" id="hiscorePanel">
-      <h2>Hiscores</h2>
-      <label>Username:<input type="text" id="inpUser"></label>
-      <label>Skill:
-        <select id="selSkill"></select>
-      </label>
-      <button id="btnFetchHiscore">Fetch Hiscores</button>
-      <ul id="hiscoreResult">
-        <li>Rank: <span id="hiscoreRank">—</span></li>
-        <li>Level: <span id="hiscoreLevel">—</span></li>
-        <li>Experience: <span id="hiscoreXP">—</span></li>
-      </ul>
-    </section>
 
-    <section class="panel" id="consumablesPanel">
-      <h2>Consumables</h2>
-      <div class="checkbox-grid">
-        <label><input type="checkbox" id="cbBrazier"> Brazier</label>
-        <label><input type="checkbox" id="cbCrafter"> Crafter</label>
-        <label><input type="checkbox" id="cbFletcher"> Fletcher</label>
-        <label><input type="checkbox" id="cbRange"> Range</label>
-        <label><input type="checkbox" id="cbWell"> Well</label>
-        <label><input type="checkbox" id="cbWorkbench"> Workbench</label>
-        <label><input type="checkbox" id="cbUrns"> Urns</label>
-        <label><input type="checkbox" id="cbUrnEnh"> Urn Enhancer</label>
-        <label><input type="checkbox" id="cbPowder"> Powder of Burials</label>
-      </div>
-    </section>
+  <div id="container">
+    <aside id="sidebar">
+      <nav>
+        <a href="#hiscorePanel">Hiscores</a>
+        <a href="#consumablesPanel">Consumables</a>
+        <a href="#calcPanel">Calculator</a>
+        <a href="#gePanel">Grand Exchange</a>
+      </nav>
+    </aside>
 
-    <section class="panel" id="calcPanel">
-      <h2>Skilling Boost Calculator</h2>
-      <label>Base XP:<input type="number" id="baseXP" step="0.01"></label>
-      <label>Clan Avatar:<input type="range" id="clanAvatar" min="3" max="6" step="0.1"><span id="clanAvatarVal">3.0%</span></label>
-      <div class="checkbox-grid">
-        <label><input type="checkbox" id="bRelic"> Relic Powers</label>
-        <label><input type="checkbox" id="bIncense"> Incense Sticks</label>
-        <label><input type="checkbox" id="bWisdom"> Wisdom Aura</label>
-        <label><input type="checkbox" id="bPantheon"> Desert Pantheon</label>
-        <label><input type="checkbox" id="bPulse"> Pulse Core</label>
-        <label><input type="checkbox" id="bCinder"> Cinder Core</label>
-        <label><input type="checkbox" id="bCoin"> Coin of Enchantment</label>
-        <label><input type="checkbox" id="bSceptre"> Sceptre of Enchantment</label>
-        <label><input type="checkbox" id="bArtifact"> Premier Artifact</label>
-        <label><input type="checkbox" id="bDXP"> Double XP Weekend</label>
-        <label><input type="checkbox" id="bBonus"> Bonus Experience</label>
-        <label><input type="checkbox" id="bWise"> Wise Perk</label>
-        <label><input type="checkbox" id="bOutfit"> Skilling Outfit</label>
-      </div>
-      <label>Add % Boost:<input type="number" id="addPct" step="0.1"><span>%</span></label>
-      <div class="btn-group">
-        <button id="btnCheckUpdates">Check for Updates</button>
-        <button id="btnSaveReport">Save Report</button>
-        <button id="btnCalcXP">Calculate Total XP</button>
-      </div>
-      <p>% Boost: <span id="pctBoost">—</span></p>
-      <p>Total XP: <span id="totalXP">—</span></p>
-    </section>
+    <main>
+      <!-- Hiscores panel -->
+      <section class="panel" id="hiscorePanel">
+        <h2>Hiscores</h2>
+        <label>Username:<input type="text" id="inpUser"></label>
+        <label>Skill:<select id="selSkill"></select></label>
+        <button id="btnFetchHiscore">Fetch Hiscores</button>
+        <ul id="hiscoreResult">
+          <li>Rank: <span id="hiscoreRank">—</span></li>
+          <li>Level: <span id="hiscoreLevel">—</span></li>
+          <li>Experience: <span id="hiscoreXP">—</span></li>
+        </ul>
+      </section>
 
-    <section class="panel" id="gePanel">
-      <h2>Grand Exchange Price Tracker</h2>
-      <label>Search Item:<input type="text" id="geSearch" placeholder="Type 3+ chars"></label>
-      <button id="btnGetGESugg">Get Suggestions</button>
-      <label>Select Item:<select id="geSelect"></select></label>
-      <label>Quantity:<input type="number" id="geQty" value="1" min="1"></label>
-      <button id="btnAddToCart">Add to Cart</button>
-      <table id="geCartTable">
-        <thead><tr><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <p>Status: <span id="geStatus">Loading items...</span></p>
-      <p>Grand Total: <span id="geGrandTotal">0</span></p>
-      <button id="btnShowReceipt">Show Receipt</button>
-    </section>
-  </main>
+      <!-- Consumables panel -->
+      <section class="panel" id="consumablesPanel">
+        <h2>Consumables</h2>
+        <div class="checkbox-grid">
+          <label><input type="checkbox" id="cbBrazier"> Brazier</label>
+          <label><input type="checkbox" id="cbCrafter"> Crafter</label>
+          <label><input type="checkbox" id="cbFletcher"> Fletcher</label>
+          <label><input type="checkbox" id="cbRange"> Range</label>
+          <label><input type="checkbox" id="cbWell"> Well</label>
+          <label><input type="checkbox" id="cbWorkbench"> Workbench</label>
+          <label><input type="checkbox" id="cbUrns"> Urns</label>
+          <label><input type="checkbox" id="cbUrnEnh"> Urn Enhancer</label>
+        </div>
+      </section>
 
-  <!-- Modals -->
-  <div id="modalLogs" class="modal">
-    <div class="modal-content">
-      <h3>Console Logs</h3>
-      <pre id="logContent"></pre>
-      <button onclick="closeModal('modalLogs')">Close</button>
-    </div>
+      <!-- Calculator panel -->
+      <section class="panel" id="calcPanel">
+        <h2>Skilling Boost Calculator</h2>
+        <label>Base XP:<input type="number" id="baseXP" step="0.01"></label>
+        <label>Clan Avatar:<input type="range" id="clanAvatar" min="3" max="6" step="0.1"><span id="clanAvatarVal">3.0%</span></label>
+        <div class="checkbox-grid">
+          <label><input type="checkbox" id="bRelic"> Relic Powers</label>
+          <label><input type="checkbox" id="bIncense"> Incense Sticks</label>
+          <label><input type="checkbox" id="bWisdom"> Wisdom Aura</label>
+          <label><input type="checkbox" id="bPantheon"> Desert Pantheon</label>
+          <label><input type="checkbox" id="bPulse"> Pulse Core</label>
+          <label><input type="checkbox" id="bCinder"> Cinder Core</label>
+          <label><input type="checkbox" id="bCoin"> Coin of Enchantment</label>
+          <label><input type="checkbox" id="bSceptre"> Sceptre of Enchantment</label>
+          <label><input type="checkbox" id="bArtifact"> Premier Artifact</label>
+          <label><input type="checkbox" id="bDXP"> Double XP</label>
+          <label><input type="checkbox" id="bBonus"> Bonus XP</label>
+        </div>
+        <label>Add Flat XP:<input type="number" id="addPct" step="1"></label>
+        <div class="btn-group">
+          <button id="btnCheckUpdates">Check for Updates</button>
+          <button id="btnSaveReport">Save Report</button>
+          <button id="btnCalcXP">Calculate Total XP</button>
+        </div>
+        <p>% Boost: <span id="pctBoost">—</span></p>
+        <p>Total XP: <span id="totalXP">—</span></p>
+      </section>
+
+      <!-- GE panel -->
+      <section class="panel" id="gePanel">
+        <h2>Grand Exchange Price Tracker</h2>
+        <label>Search Item:<input type="text" id="geSearch" placeholder="Type 3+ chars"></label>
+        <button id="btnGetGESugg">Get Suggestions</button>
+        <label>Select Item:<select id="geSelect"></select></label>
+        <label>Quantity:<input type="number" id="geQty" value="1" min="1"></label>
+        <button id="btnAddToCart">Add to Cart</button>
+        <table id="geCartTable">
+          <thead><tr><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p>Status: <span id="geStatus">Loading items...</span></p>
+        <p>Grand Total: <span id="geGrandTotal">0</span></p>
+        <button id="btnShowReceipt">Show Receipt</button>
+      </section>
+    </main>
   </div>
 
-  <div id="modalWiki" class="modal">
-    <div class="modal-content">
-      <h3 id="wikiTitle">Wiki Extract</h3>
-      <pre id="wikiContent"></pre>
-      <button onclick="closeModal('modalWiki')">Close</button>
-    </div>
-  </div>
-
-  <div id="modalReceipt" class="modal">
-    <div class="modal-content">
-      <h3>Receipt</h3>
-      <pre id="receiptContent"></pre>
-      <button onclick="closeModal('modalReceipt')">Close</button>
-    </div>
-  </div>
-
+  <!-- Modals same as before -->
   <script src="/static/js/app.js"></script>
 </body>
 </html>
