@@ -1,344 +1,348 @@
 # app.py
-#!/usr/bin/env python3
+# RS3 XP Calculator v4.4 – Back‐end (Flask)
 
-import os
 import io
 import time
-import json
 import threading
-import traceback
-from flask import Flask, jsonify, request, render_template, send_file, abort
-from jinja2 import TemplateNotFound
+import logging
+from logging.handlers import RotatingFileHandler
+
 import requests
+from flask import (
+    Flask, request, jsonify, send_file,
+    render_template, abort
+)
+from flask_cors import CORS
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
+# --------------------
+# App & Logger Setup
+# --------------------
+app = Flask(__name__)
+CORS(app)  # allow cross‐origin for JS
 
-# -------------------------------------
-# Global state for GE preload + logs
-# -------------------------------------
-ge_all_items = {}
-ge_loaded = False
-logs = []
+# Rotating file handler (max 1MB, 3 backups)
+file_handler = RotatingFileHandler('rs3calc.log', maxBytes=1_000_000, backupCount=3)
+file_formatter = logging.Formatter('[%(asctime)s] %(message)s')
+file_handler.setFormatter(file_formatter)
+app.logger.setLevel(logging.INFO)
+app.logger.addHandler(file_handler)
 
-def log(msg: str):
-    """Append a timestamped message to the in-memory log."""
-    ts = time.strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{ts}] {msg}"
-    print(line)
-    logs.append(line)
+# In‐memory cache for live log endpoint
+log_cache = []
+class CacheHandler(logging.Handler):
+    def emit(self, record):
+        msg = self.format(record)
+        log_cache.append(msg)
+        # keep last 500 lines
+        if len(log_cache) > 500:
+            log_cache.pop(0)
 
-# -------------------------------------
-# Preload GE catalogue in background
-# -------------------------------------
-def ge_preload():
-    """Fetch the entire GE catalogue, skipping invalid buckets, logging every failure."""
-    global ge_all_items, ge_loaded
-    log("Starting full GE item preload…")
-    ITEMS_PER_PAGE = 12
-    MAX_CATEGORY = 37
+cache_handler = CacheHandler()
+cache_handler.setFormatter(file_formatter)
+app.logger.addHandler(cache_handler)
 
-    temp = {}
-    for cat in range(MAX_CATEGORY + 1):
-        url_cat = f"https://secure.runescape.com/m=itemdb_rs/api/catalogue/category.json?category={cat}"
-        try:
-            r = requests.get(url_cat, timeout=10)
-            r.raise_for_status()
-            data = r.json()
-        except (requests.HTTPError, ValueError, json.JSONDecodeError) as e:
-            log(f"Category {cat} fetch failed: {e}")
-            continue
 
-        for bucket in data.get("alpha", []):
-            letter = bucket.get("letter", "")
-            count  = bucket.get("items", 0)
-            if not (letter.isalpha() and len(letter) == 1):
-                log(f"Skipping non-alphabetic bucket '{letter}'")
-                continue
-            pages = (count + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
-            for p in range(1, pages + 1):
-                url_page = (
-                    "https://secure.runescape.com/m=itemdb_rs/api/catalogue/items.json"
-                    f"?category={cat}&alpha={letter}&page={p}"
-                )
-                try:
-                    r2 = requests.get(url_page, timeout=10)
-                    r2.raise_for_status()
-                    page_data = r2.json()
-                except (requests.HTTPError, ValueError, json.JSONDecodeError) as e:
-                    log(f"Cat {cat} letter {letter} page {p} JSON error: {e}")
-                    continue
-
-                for it in page_data.get("items", []):
-                    name = it.get("name")
-                    if name:
-                        temp[name] = it.get("id")
-
-    ge_all_items = temp
-    ge_loaded = True
-    log(f"Completed preload: {len(ge_all_items)} items cached")
-
-# Start initial preload
-threading.Thread(target=ge_preload, daemon=True).start()
-
-# -------------------------------------
-# Periodic reload every 12 hours
-# -------------------------------------
-def schedule_periodic_ge_preload():
-    log("Scheduling periodic GE preload every 12 hours")
-    while True:
-        time.sleep(12 * 3600)
-        log("Running periodic GE preload")
-        ge_preload()
-
-threading.Thread(target=schedule_periodic_ge_preload, daemon=True).start()
-
-# -------------------------------------
-# Hiscores fetch
-# -------------------------------------
+# -----------------------
+# Constants & Shared Data
+# -----------------------
+# Skill list must match front‐end SKILLS[]
 SKILLS = [
     "Overall","Attack","Defence","Strength","Constitution","Ranged","Prayer","Magic",
     "Cooking","Woodcutting","Fletching","Fishing","Firemaking","Crafting","Smithing",
     "Mining","Herblore","Agility","Thieving","Slayer","Farming","Runecrafting","Hunter",
     "Construction","Summoning","Dungeoneering","Divination","Invention","Archaeology"
 ]
-SKILL_INDEX = {name: idx for idx, name in enumerate(SKILLS)}
 
-def fetch_hiscore_xp(username: str, skill: str):
-    url = "https://secure.runescape.com/m=hiscore/index_lite.ws"
-    resp = requests.get(url, params={"player": username.replace(" ", "+")}, timeout=10)
-    resp.raise_for_status()
-    lines = resp.text.splitlines()
-    idx = SKILL_INDEX.get(skill, 0)
-    if len(lines) <= idx:
-        raise ValueError(f"No hiscore data for skill '{skill}'")
-    parts = lines[idx].split(",")
-    xp = float(parts[2])
-    return {"rank": parts[0], "level": parts[1], "xp": xp}
+# Grand Exchange preload state
+ge_data = {
+    'loaded': False,
+    'items': [],       # list of dict{'id','name'}
+    'timestamp': 0
+}
 
-# -------------------------------------
-# XP Calculation
-# -------------------------------------
-def calculate_xp(data):
-    b = float(data.get("base_xp", 0))
-    extra = float(data.get("add_xp", 0))
-    steps = []
 
-    def rec(s):
-        steps.append(s)
-        log(s)
+# ------------------------
+# Grand Exchange Preloader
+# ------------------------
+def ge_preload():
+    """Background thread: fetch all GE items via secure.runescape.com API."""
+    app.logger.info("GE preload starting…")
+    items = []
+    # categories 0–4 cover all; letters a–z
+    for cat in range(5):
+        for letter in 'abcdefghijklmnopqrstuvwxyz':
+            page = 1
+            while True:
+                url = (
+                    "https://secure.runescape.com/"
+                    f"m=itemdb_rs/api/catalogue/items.json"
+                    f"?category={cat}&alpha={letter}&page={page}"
+                )
+                try:
+                    r = requests.get(url, timeout=5)
+                    r.raise_for_status()
+                    data = r.json()
+                except Exception as e:
+                    app.logger.info(f"GE load cat {cat} letter {letter} page {page} failed: {e}")
+                    break
+                batch = data.get('items', [])
+                if not batch:
+                    break
+                for it in batch:
+                    items.append({'id': it['id'], 'name': it['name']})
+                page += 1
+    ge_data['items'] = items
+    ge_data['loaded'] = True
+    ge_data['timestamp'] = time.time()
+    app.logger.info(f"GE preload complete: {len(items)} items")
 
-    rec(f"Base XP: {b:.2f}")
-    rec(f"Flat add XP: {extra:.2f}")
-    bonus = 0.0
 
-    pct = data.get("clan_avatar", 0.0) / 100.0
-    inc = pct * b; bonus += inc
-    rec(f"Clan Avatar: {pct:.3f} * {b:.2f} = {inc:.2f}")
+# start preload in daemon thread
+threading.Thread(target=ge_preload, daemon=True).start()
 
-    boost_map = {
-        "Relic Powers":0.02,"Incense Sticks":0.02,"Wisdom Aura":0.025,
-        "Desert Pantheon":0.10,"Pulse Core":0.10,"Cinder Core":0.10,
-        "Coin of Enchantment":0.02,"Sceptre of Enchantment":0.04,"Premier Artifact":0.10
-    }
-    for name, p in boost_map.items():
-        if data.get("vars_pct", {}).get(name):
-            inc = p * b; bonus += inc
-            rec(f"{name}: {p:.3f} * {b:.2f} = {inc:.2f}")
 
-    if data.get("dxpw"):
-        inc = b; bonus += inc
-        rec(f"Double XP Weekend: 1.000 * {b:.2f} = {inc:.2f}")
-    if data.get("bonusexp"):
-        inc = b; bonus += inc
-        rec(f"Bonus Experience: 1.000 * {b:.2f} = {inc:.2f}")
-
-    port_map = {
-        "Brazier":0.10,"Crafter":0.10,"Fletcher":0.10,
-        "Range":0.21,"Well":0.10,"Workbench":0.10
-    }
-    for name, p in port_map.items():
-        if data.get("port_vars", {}).get(name):
-            mult = 2.0 if data.get("dxpw") else 1.0
-            inc = p * mult * b; bonus += inc
-            rec(f"{name}: {(p*mult):.3f} * {b:.2f} = {inc:.2f}")
-
-    if data.get("urn"):
-        pct_u = 0.25 if data.get("urn_enh") else 0.20
-        inc = pct_u * b; bonus += inc
-        label = "Urn + Enhancer" if data.get("urn_enh") else "Urn"
-        rec(f"{label}: {pct_u:.3f} * {b:.2f} = {inc:.2f}")
-
-    total = b + extra + bonus
-    rec(f"Total = {b:.2f} + {extra:.2f} + {bonus:.2f} = {total:.2f}")
-    return {"total": total, "steps": steps}
-
-# -------------------------------------
-# Wiki Helper
-# -------------------------------------
-class Wiki:
-    BASE = "https://runescape.wiki/api.php"
-    @staticmethod
-    def search(term, limit=5):
-        r = requests.get(Wiki.BASE, params={
-            "action":"opensearch","format":"json","search":term,"limit":limit
-        }, timeout=10)
-        r.raise_for_status()
-        return r.json()[1]
-    @staticmethod
-    def extract(title, chars=2000):
-        r = requests.get(Wiki.BASE, params={
-            "action":"query","format":"json","prop":"extracts",
-            "exintro":"","explaintext":"","exchars":chars,"titles":title
-        }, timeout=10)
-        r.raise_for_status()
-        pages = r.json()["query"]["pages"]
-        return next(iter(pages.values())).get("extract","")
-
-# -------------------------------------
-# Routes
-# -------------------------------------
-@app.route("/")
+# -------------------
+# Web Page Rendering
+# -------------------
+@app.route('/')
 def index():
-    try:
-        return render_template("index.html")
-    except TemplateNotFound:
-        log("index.html not found")
-        return "<h1>Template missing!</h1>", 200
+    """Serve main HTML page."""
+    return render_template('index.html')
 
-@app.route("/api/logs")
-def get_logs():
-    return jsonify(logs)
 
-@app.route("/api/hiscore")
+# -------------------
+# Live Logs Endpoint
+# -------------------
+@app.route('/api/logs')
+def api_logs():
+    """Return last ~500 log lines as JSON array."""
+    return jsonify(log_cache)
+
+
+# -------------------
+# Hiscores Endpoint
+# -------------------
+@app.route('/api/hiscore')
 def api_hiscore():
-    user = request.args.get("username","").strip()
-    skill = request.args.get("skill","Overall")
+    """Fetch a single skill line from RS3 hiscore index_lite."""
+    user = request.args.get('username', '')
+    skill = request.args.get('skill', 'Overall')
     if not user:
-        abort(400, "username required")
+        abort(400, "Missing username")
     try:
-        return jsonify(fetch_hiscore_xp(user, skill))
-    except Exception as e:
-        abort(500, str(e))
-
-@app.route("/api/calculate", methods=["POST"])
-def api_calculate():
-    try:
-        return jsonify(calculate_xp(request.json or {}))
-    except Exception as e:
-        abort(500, str(e))
-
-@app.route("/api/wiki/search")
-def api_wiki_search():
-    term = request.args.get("term","").strip()
-    if not term:
-        return jsonify([])
-    try:
-        return jsonify(Wiki.search(term, limit=5))
-    except:
-        return jsonify([])
-
-@app.route("/api/wiki/extract")
-def api_wiki_extract():
-    title = request.args.get("title","")
-    try:
-        return jsonify({"extract": Wiki.extract(title, chars=5000)})
-    except:
-        return jsonify({"extract": ""})
-
-GITHUB_REPO_TAGS = "https://api.github.com/repos/caydenmb/RS3Calculator/tags"
-CURRENT_VERSION = "v4.4"
-
-@app.route("/api/updates")
-def api_updates():
-    try:
-        r = requests.get(GITHUB_REPO_TAGS, timeout=5)
+        url = f"https://secure.runescape.com/m=hiscore/index_lite.ws?player={user}"
+        r = requests.get(url, timeout=5)
         r.raise_for_status()
-        tags = r.json()
-        latest = tags[0]["name"] if tags else CURRENT_VERSION
+        lines = r.text.splitlines()
+        idx = SKILLS.index(skill)
+        rank, level, xp = lines[idx].split(',')
         return jsonify({
-            "current": CURRENT_VERSION,
-            "latest": latest,
-            "update_available": latest != CURRENT_VERSION
+            'rank': int(rank),
+            'level': int(level),
+            'xp': int(xp)
         })
-    except:
-        return jsonify({
-            "current": CURRENT_VERSION,
-            "latest": CURRENT_VERSION,
-            "update_available": False
-        })
+    except Exception as e:
+        app.logger.error(f"Hiscore fetch error for {user}/{skill}: {e}")
+        abort(502, str(e))
 
-@app.route("/api/ge/status")
-def api_ge_status():
-    return jsonify({"loaded": ge_loaded, "count": len(ge_all_items)})
 
-@app.route("/api/ge/suggest")
-def api_ge_suggest():
-    term = request.args.get("term","").strip().lower()
-    if not ge_loaded:
-        return jsonify([]), 503
-    if len(term) < 3:
-        return jsonify([])
-    matches = [n for n in ge_all_items if term in n.lower()]
-    matches.sort()
-    return jsonify(matches[:50])
+# ----------------------
+# XP Calculation Endpoint
+# ----------------------
+@app.route('/api/calculate', methods=['POST'])
+def api_calculate():
+    """Apply all boosts in order and return total + step‐by‐step math."""
+    data = request.get_json() or {}
+    base = float(data.get('base_xp', 0))
+    add_xp = float(data.get('add_xp', 0))
+    clan_pct = float(data.get('clan_avatar', 0))
+    vars_pct = data.get('vars_pct', {})
+    dxpw = bool(data.get('dxpw', False))
+    bonusexp = bool(data.get('bonusexp', False))
 
-@app.route("/api/ge/detail")
-def api_ge_detail():
-    name = request.args.get("name","")
-    iid = ge_all_items.get(name)
-    if not iid:
-        return jsonify({"price_str":"0","unit":0}), 404
+    steps = []
+    xp = base
+    steps.append(f"Base XP: {xp:.2f}")
+
+    # additional flat XP from percent
+    if add_xp:
+        xp += add_xp
+        steps.append(f"Additional XP: {add_xp:.2f}")
+
+    # clan avatar boost
+    clan_boost = xp * (clan_pct / 100)
+    xp += clan_boost
+    steps.append(f"Clan Avatar ({clan_pct:.1f}%): {clan_boost:.2f}")
+
+    # named boosts mapping (percent)
+    boost_map = {
+        'Relic Powers':2, 'Incense Sticks':2, 'Wisdom Aura':2,
+        'Desert Pantheon':3, 'Pulse Core':1, 'Cinder Core':1.5,
+        'Coin of Enchantment':3.5, 'Sceptre of Enchantment':2.5,
+        'Premier Artifact':1.5
+    }
+    for name, enabled in vars_pct.items():
+        if enabled and name in boost_map:
+            pct = boost_map[name]
+            boost_amt = xp * (pct/100)
+            xp += boost_amt
+            steps.append(f"{name} ({pct}%): {boost_amt:.2f}")
+
+    # double XP
+    if dxpw:
+        boost_amt = xp
+        xp *= 2
+        steps.append(f"Double XP: +{boost_amt:.2f}")
+
+    # generic bonus XP (5%)
+    if bonusexp:
+        pct = 5
+        boost_amt = xp * (pct/100)
+        xp += boost_amt
+        steps.append(f"Bonus XP ({pct}%): {boost_amt:.2f}")
+
+    total = xp
+    return jsonify({'total': total, 'steps': steps})
+
+
+# -----------------------
+# Download Report Endpoint
+# -----------------------
+@app.route('/api/download/report.txt', methods=['POST'])
+def download_report():
+    """Generate a text report with full math steps for user to save."""
+    data = request.get_json() or {}
+    user = data.get('username', 'Unknown')
+    skill = data.get('skill', 'Overall')
+    steps = data.get('steps', [])
+
+    report = io.StringIO()
+    report.write("RS3 XP Calculator Report\n")
+    report.write("========================\n")
+    report.write(f"Username: {user}\nSkill: {skill}\n\nMath Steps:\n")
+    for line in steps:
+        report.write(" • " + line + "\n")
+
+    buf = io.BytesIO(report.getvalue().encode('utf-8'))
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name='rs3_xp_report.txt',
+        mimetype='text/plain'
+    )
+
+
+# --------------------------
+# GitHub Update Checker
+# --------------------------
+@app.route('/api/updates')
+def api_updates():
+    """Compare local version to GitHub HEAD SHA."""
+    current_version = "v4.4"
     try:
         r = requests.get(
-            f"https://secure.runescape.com/m=itemdb_rs/api/catalogue/detail.json?item={iid}",
-            timeout=10
+            "https://api.github.com/repos/caydenmb/RS3Calculator/commits/main",
+            timeout=5
         )
         r.raise_for_status()
-        item = r.json().get("item", {})
-        price_str = item.get("current", {}).get("price", "0")
-        s = price_str.strip().lower().replace(",", "")
-        if s.endswith("m"):
-            unit = float(s[:-1]) * 1e6
-        elif s.endswith("k"):
-            unit = float(s[:-1]) * 1e3
-        else:
-            unit = float(s)
-        return jsonify({"price_str": price_str, "unit": unit})
-    except:
-        return jsonify({"price_str":"0","unit":0}), 500
+        latest_sha = r.json().get('sha', '')[:7]
+    except Exception as e:
+        app.logger.error("Update check failed: %s", e)
+        latest_sha = current_version
 
-@app.route("/api/download/logs.txt")
-def download_logs():
-    buf = io.StringIO()
-    buf.write("RS3 XP Calculator v4.4 – Logs\n")
-    buf.write(f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-    buf.write("\n".join(logs))
-    buf.seek(0)
-    return send_file(
-        io.BytesIO(buf.read().encode("utf-8")),
-        mimetype="text/plain",
-        as_attachment=True,
-        download_name="rs3_logs.txt"
-    )
+    return jsonify({
+        'current': current_version,
+        'latest': latest_sha,
+        'update_available': latest_sha != current_version
+    })
 
-@app.route("/api/download/report.txt", methods=["POST"])
-def download_report():
-    data = request.json or {}
-    buf = io.StringIO()
-    buf.write("RS3 XP Calculator v4.4 – Detailed Report\n")
-    buf.write(f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-    buf.write(f"Username: {data.get('username','')}\n")
-    buf.write(f"Skill: {data.get('skill','')}\n\n")
-    buf.write("Math Steps:\n")
-    for line in data.get("steps", []):
-        buf.write(line + "\n")
-    buf.seek(0)
-    return send_file(
-        io.BytesIO(buf.read().encode("utf-8")),
-        mimetype="text/plain",
-        as_attachment=True,
-        download_name="rs3_report.txt"
-    )
 
-if __name__ == "__main__":
-    app.run(port=int(os.environ.get("PORT", 5000)), debug=True)
+# ----------------
+# Wiki Search API
+# ----------------
+@app.route('/api/wiki/search')
+def wiki_search():
+    """Fuzzy search RS3 Wiki titles via opensearch."""
+    term = request.args.get('term', '')
+    params = {
+        'action': 'opensearch',
+        'search': term,
+        'limit': 5,
+        'namespace': 0,
+        'format': 'json'
+    }
+    r = requests.get("https://runescape.wiki/api.php", params=params, timeout=5)
+    r.raise_for_status()
+    suggestions = r.json()[1]  # second element is list of titles
+    return jsonify(suggestions)
+
+
+@app.route('/api/wiki/extract')
+def wiki_extract():
+    """Fetch the intro extract for a given Wiki title."""
+    title = request.args.get('title', '')
+    params = {
+        'action': 'query',
+        'prop': 'extracts',
+        'exintro': '',
+        'explaintext': '',
+        'titles': title,
+        'format': 'json'
+    }
+    r = requests.get("https://runescape.wiki/api.php", params=params, timeout=5)
+    r.raise_for_status()
+    pages = r.json().get('query', {}).get('pages', {})
+    # extract text from the only page in the dict
+    extract = next(iter(pages.values())).get('extract', '')
+    return jsonify({'extract': extract})
+
+
+# ------------------------
+# Grand Exchange Endpoints
+# ------------------------
+@app.route('/api/ge/status')
+def ge_status():
+    """Return preload status and total count of GE items."""
+    return jsonify({
+        'loaded': ge_data['loaded'],
+        'count': len(ge_data['items'])
+    })
+
+
+@app.route('/api/ge/suggest')
+def ge_suggest():
+    """Return up to 50 item‐name suggestions containing the term."""
+    term = request.args.get('term', '').lower()
+    if not ge_data['loaded']:
+        return ('', 503)
+    matches = [
+        it['name'] for it in ge_data['items']
+        if term in it['name'].lower()
+    ][:50]
+    return jsonify(matches)
+
+
+@app.route('/api/ge/detail')
+def ge_detail():
+    """Fetch live price for a single GE item via its ID."""
+    name = request.args.get('name', '')
+    if not ge_data['loaded']:
+        abort(503)
+    # find exact match
+    found = next((it for it in ge_data['items'] if it['name'] == name), None)
+    if not found:
+        abort(404, "Item not found")
+    item_id = found['id']
+    url = f"https://secure.runescape.com/m=itemdb_rs/api/catalogue/detail.json?item={item_id}"
+    r = requests.get(url, timeout=5)
+    r.raise_for_status()
+    price = r.json()['item']['current']['price']
+    return jsonify({'unit': price})
+
+
+# -------------
+# Launch Server
+# -------------
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)

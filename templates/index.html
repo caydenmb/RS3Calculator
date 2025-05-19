@@ -5,29 +5,56 @@
   <meta charset="UTF-8">
   <title>RS3 XP Calculator v4.4</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Modern system font -->
+
+  <!-- Inter font for a clean, modern look -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Main stylesheet -->
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-  <header class="app-header">
+  <!-- App header with logo and quick‐access buttons -->
+  <header class="app-header" aria-label="Application Header">
+    <!-- Logo / Title -->
     <h1 class="logo">RS3 XP Calculator v4.4</h1>
+
+    <!-- Top‐right action buttons -->
     <div class="header-actions">
-      <button id="btnViewLogs" class="btn btn-primary">View Logs</button>
-      <button id="btnCheckUpdates" class="btn">Check Updates</button>
-      <button id="btnFetchWiki" class="btn">Wiki</button>
+      <!-- View logs opens live console in pop-out -->
+      <button id="btnViewLogs" class="btn btn-primary" aria-label="View console logs">
+        View Logs
+      </button>
+      <!-- Check for GitHub updates -->
+      <button id="btnCheckUpdates" class="btn" aria-label="Check for updates">
+        Check Updates
+      </button>
+      <!-- Fuzzy wiki search -->
+      <button id="btnFetchWiki" class="btn" aria-label="Search RS3 Wiki">
+        Wiki
+      </button>
     </div>
   </header>
 
+  <!-- Main grid container: one card per feature -->
   <main class="app-main">
-    <!-- Hiscores Card -->
-    <section class="card">
-      <h2>Hiscores</h2>
+    <!-- ==================== Hiscores Card ==================== -->
+    <section class="card hiscores-card" aria-labelledby="hiscores-title">
+      <h2 id="hiscores-title">Hiscores Lookup</h2>
+      <!-- Username & skill selectors -->
       <div class="form-group">
-        <label>Username<input type="text" id="inpUser" placeholder="Enter player name"></label>
-        <label>Skill<select id="selSkill"></select></label>
+        <label for="inpUser">Username</label>
+        <input type="text" id="inpUser" class="input" placeholder="Enter player name">
+
+        <label for="selSkill">Skill</label>
+        <select id="selSkill" class="input"></select>
       </div>
-      <button id="btnFetchHiscore" class="btn">Fetch Hiscores</button>
+      <!-- Fetch button -->
+      <div class="btn-group">
+        <button id="btnFetchHiscore" class="btn btn-primary">
+          Fetch Hiscores
+        </button>
+      </div>
+      <!-- Displayed results -->
       <ul class="result-list">
         <li>Rank: <span id="hiscoreRank">–</span></li>
         <li>Level: <span id="hiscoreLevel">–</span></li>
@@ -35,17 +62,25 @@
       </ul>
     </section>
 
-    <!-- XP Calculator Card -->
-    <section class="card">
-      <h2>Skilling Boost Calculator</h2>
-      <div class="form-group">
-        <label>Base XP<input type="number" id="baseXP" step="0.01"></label>
-        <label>Clan Avatar<input type="range" id="clanAvatar" min="3" max="6" step="0.1">
-          <span id="clanAvatarVal">3.0%</span>
-        </label>
+    <!-- ==================== XP Calculator Card ==================== -->
+    <section class="card xp-card" aria-labelledby="xp-title">
+      <h2 id="xp-title">Skilling Boost Calculator</h2>
+
+      <!-- Base XP and Clan Avatar slider -->
+      <div class="form-group slider-group">
+        <label for="baseXP">Base XP</label>
+        <input type="number" id="baseXP" class="input" step="0.01" placeholder="0.00">
+
+        <label for="clanAvatar">Clan Avatar Boost</label>
+        <div class="slider-with-value">
+          <input type="range" id="clanAvatar" class="slider" min="3" max="6" step="0.1">
+          <output id="clanAvatarVal">3.0%</output>
+        </div>
       </div>
-      <fieldset class="checkbox-grid">
-        <legend>Boosts</legend>
+
+      <!-- Boost checkboxes -->
+      <fieldset class="checkbox-grid" aria-labelledby="boosts-title">
+        <legend id="boosts-title">Select Boosts</legend>
         <label><input type="checkbox" id="bRelic"> Relic Powers</label>
         <label><input type="checkbox" id="bIncense"> Incense Sticks</label>
         <label><input type="checkbox" id="bWisdom"> Wisdom Aura</label>
@@ -58,39 +93,76 @@
         <label><input type="checkbox" id="bDXP"> Double XP</label>
         <label><input type="checkbox" id="bBonus"> Bonus XP</label>
       </fieldset>
-      <label class="form-group">Flat XP Add<input type="number" id="addPct" step="1"></label>
+
+      <!-- Additional XP percentage slider -->
+      <div class="form-group slider-group">
+        <label for="addPct">Additional XP %</label>
+        <div class="slider-with-value">
+          <input type="range" id="addPct" class="slider" min="0" max="100" step="0.1">
+          <output id="addPctVal">0.0%</output>
+        </div>
+      </div>
+
+      <!-- Calculate & save report buttons -->
       <div class="btn-group">
-        <button id="btnCalcXP" class="btn btn-primary">Calculate XP</button>
-        <button id="btnSaveReport" class="btn">Save Report</button>
+        <button id="btnCalcXP" class="btn btn-primary">
+          Calculate XP
+        </button>
+        <button id="btnSaveReport" class="btn">
+          Save Report
+        </button>
       </div>
-      <div class="result-list">
-        <p>% Boost: <span id="pctBoost">–</span></p>
-        <p>Total XP: <span id="totalXP">–</span></p>
+
+      <!-- Summary stats -->
+      <div class="result-list stats">
+        <p>% Boost: <strong><span id="pctBoost">–</span></strong></p>
+        <p>Total XP: <strong><span id="totalXP">–</span></strong></p>
       </div>
+
+      <!-- Full step-by-step breakdown -->
+      <h3>Calculation Steps</h3>
+      <pre id="xpSteps" class="xp-steps">---</pre>
     </section>
 
-    <!-- Grand Exchange Card -->
-    <section class="card">
-      <h2>Grand Exchange Tracker</h2>
+    <!-- ==================== Grand Exchange Card ==================== -->
+    <section class="card ge-card" aria-labelledby="ge-title">
+      <h2 id="ge-title">Grand Exchange Tracker</h2>
+
+      <!-- Search + suggestion -->
       <div class="form-group">
-        <label>Search<input type="text" id="geSearch" placeholder="3+ characters"></label>
-        <button id="btnGetGESugg" class="btn">Get Suggestions</button>
+        <label for="geSearch">Search Item</label>
+        <input type="text" id="geSearch" class="input" placeholder="Type 3+ chars" minlength="3">
+        <button id="btnGetGESugg" class="btn btn-secondary">
+          Suggest
+        </button>
       </div>
+
+      <!-- Selection + quantity -->
       <div class="form-group">
-        <label>Select Item<select id="geSelect"></select></label>
-        <label>Quantity<input type="number" id="geQty" value="1" min="1"></label>
-        <button id="btnAddToCart" class="btn">Add to Cart</button>
+        <label for="geSelect">Select Item</label>
+        <select id="geSelect" class="input"></select>
+
+        <label for="geQty">Quantity</label>
+        <input type="number" id="geQty" class="input" value="1" min="1">
+
+        <button id="btnAddToCart" class="btn btn-primary">
+          Add to Cart
+        </button>
       </div>
+
+      <!-- Cart table + totals -->
       <table class="ge-table">
-        <thead><tr><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
+        <thead>
+          <tr><th>Qty</th><th>Unit Price</th><th>Total</th></tr>
+        </thead>
         <tbody></tbody>
       </table>
       <p>Status: <span id="geStatus">Loading…</span></p>
-      <p>Grand Total: <span id="geGrandTotal">0</span></p>
-      <button id="btnShowReceipt" class="btn">Receipt</button>
+      <p>Grand Total: <strong><span id="geGrandTotal">0</span></strong></p>
+      <button id="btnShowReceipt" class="btn">
+        View Receipt
+      </button>
     </section>
   </main>
-
-  <script src="/static/js/app.js"></script>
 </body>
 </html>

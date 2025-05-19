@@ -1,4 +1,4 @@
-// List of skills for the Hiscores dropdown
+// List of all skills for the hiscores dropdown
 const SKILLS = [
   "Overall","Attack","Defence","Strength","Constitution","Ranged","Prayer","Magic",
   "Cooking","Woodcutting","Fletching","Fishing","Firemaking","Crafting","Smithing",
@@ -6,91 +6,112 @@ const SKILLS = [
   "Construction","Summoning","Dungeoneering","Divination","Invention","Archaeology"
 ];
 
-let cart = [];         // Grand Exchange shopping cart
-let lastCalc = null;   // Store last XP‐calc result for report download
-let logWin, logInterval;
+let lastCalc = null;   // Holds last XP calculation result for report saving
+let cart = [];         // Shopping cart for Grand Exchange
+let logWin, logInterval;  // Window & interval for live logging
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Populate skills dropdown
+  // Populate hiscores skill dropdown
   const selSkill = document.getElementById("selSkill");
-  SKILLS.forEach(s => selSkill.add(new Option(s, s)));
+  SKILLS.forEach(skill => selSkill.add(new Option(skill, skill)));
 
-  // Clan Avatar slider live value
+  // Live‐update clan avatar slider value
   const clanSlider = document.getElementById("clanAvatar");
   const clanVal    = document.getElementById("clanAvatarVal");
-  clanVal.innerText = clanSlider.value + "%";
+  clanVal.textContent = clanSlider.value + "%";
   clanSlider.addEventListener("input", e => {
-    clanVal.innerText = e.target.value + "%";
+    clanVal.textContent = e.target.value + "%";
+  });
+
+  // Live‐update additional XP percentage slider value
+  const addSlider = document.getElementById("addPct");
+  const addVal    = document.getElementById("addPctVal");
+  addVal.textContent = addSlider.value + "%";
+  addSlider.addEventListener("input", e => {
+    addVal.textContent = e.target.value + "%";
   });
 
   // Button event bindings
-  document.getElementById("btnFetchHiscore").addEventListener("click", fetchHiscore);
-  document.getElementById("btnCalcXP").addEventListener("click", calculateXP);
-  document.getElementById("btnSaveReport").addEventListener("click", saveReport);
-  document.getElementById("btnCheckUpdates").addEventListener("click", checkUpdates);
-  document.getElementById("btnFetchWiki").addEventListener("click", fetchWiki);
-  document.getElementById("btnGetGESugg").addEventListener("click", getGESuggestions);
-  document.getElementById("btnAddToCart").addEventListener("click", addToCart);
-  document.getElementById("btnShowReceipt").addEventListener("click", showReceipt);
+  document.getElementById("btnViewLogs").onclick     = openLogWindow;
+  document.getElementById("btnCheckUpdates").onclick = checkUpdates;
+  document.getElementById("btnFetchWiki").onclick    = fetchWiki;
+  document.getElementById("btnFetchHiscore").onclick = fetchHiscore;
+  document.getElementById("btnCalcXP").onclick       = calculateXP;
+  document.getElementById("btnSaveReport").onclick   = saveReport;
+  document.getElementById("btnGetGESugg").onclick    = getGESuggestions;
+  document.getElementById("btnAddToCart").onclick    = addToCart;
+  document.getElementById("btnShowReceipt").onclick  = showReceipt;
 
-  // Start polling GE status
+  // Start polling Grand Exchange preload status
   updateGEStatus();
   setInterval(updateGEStatus, 2000);
 });
 
-// ----- Live Logs Pop-Out -----
-document.getElementById("btnViewLogs").onclick = () => {
+
+// ---------------- Live Logs Pop-Out ----------------
+function openLogWindow() {
+  // Open or focus the logs window
   if (!logWin || logWin.closed) {
     logWin = window.open("", "rs3logs", "width=600,height=400");
     logWin.document.write(`
       <html><head><title>RS3 Logs</title>
-      <style>body{background:#121212;color:#e0e0e0;font-family:monospace;padding:1rem}#logArea{white-space:pre-wrap}</style>
+      <style>
+        body { background:#121212; color:#e0e0e0; font-family:monospace; padding:1rem; }
+        #logArea { white-space: pre-wrap; }
+      </style>
       </head><body>
         <h3>Live Console Logs</h3>
         <pre id="logArea">Loading…</pre>
       </body></html>`);
   }
+  // Clear any existing interval
   if (logInterval) clearInterval(logInterval);
+  // Fetch logs every 2 seconds
   const update = () => {
     fetch("/api/logs")
-      .then(r => r.json())
-      .then(arr => {
+      .then(resp => resp.json())
+      .then(lines => {
         if (!logWin || logWin.closed) return clearInterval(logInterval);
-        logWin.document.getElementById("logArea").innerText = arr.join("\n");
+        logWin.document.getElementById("logArea").innerText = lines.join("\n");
       })
       .catch(err => console.error("Log fetch error:", err));
   };
   update();
   logInterval = setInterval(update, 2000);
-};
+}
 
-// ----- Hiscores Fetch -----
+
+// ---------------- Hiscores Lookup ----------------
 async function fetchHiscore() {
   const user  = document.getElementById("inpUser").value.trim();
   const skill = document.getElementById("selSkill").value;
-  if (!user) return alert("Please enter a username.");
-  console.log(`Fetching hiscores for ${user} (${skill})…`);
+  if (!user) {
+    alert("Please enter a username.");
+    return;
+  }
   try {
-    const res  = await fetch(`/api/hiscore?username=${encodeURIComponent(user)}&skill=${encodeURIComponent(skill)}`);
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    const data = await res.json();
-    document.getElementById("hiscoreRank").innerText  = data.rank;
-    document.getElementById("hiscoreLevel").innerText = data.level;
-    document.getElementById("hiscoreXP").innerText    = data.xp;
-    console.log("Hiscore result:", data);
+    const resp = await fetch(`/api/hiscore?username=${encodeURIComponent(user)}&skill=${encodeURIComponent(skill)}`);
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    const data = await resp.json();
+    // Display fetched data
+    document.getElementById("hiscoreRank").textContent  = data.rank;
+    document.getElementById("hiscoreLevel").textContent = data.level;
+    document.getElementById("hiscoreXP").textContent    = data.xp;
   } catch (err) {
     console.error("Hiscore error:", err);
     alert("Failed to fetch hiscores: " + err.message);
   }
 }
 
-// ----- XP Calculation -----
+
+// ---------------- XP Calculation ----------------
 async function calculateXP() {
-  const b    = parseFloat(document.getElementById("baseXP").value) || 0;
-  const extra= parseFloat(document.getElementById("addPct").value) || 0;
-  const clan = parseFloat(document.getElementById("clanAvatar").value);
-  // Collect percentage boosts
-  const vars_pct = {
+  // Gather inputs
+  const baseXP    = parseFloat(document.getElementById("baseXP").value) || 0;
+  const addPct    = parseFloat(document.getElementById("addPct").value) / 100;
+  const addXP     = addPct * baseXP;
+  const clanPct   = parseFloat(document.getElementById("clanAvatar").value) / 100;
+  const vars_pct  = {
     "Relic Powers":        document.getElementById("bRelic").checked,
     "Incense Sticks":      document.getElementById("bIncense").checked,
     "Wisdom Aura":         document.getElementById("bWisdom").checked,
@@ -104,15 +125,15 @@ async function calculateXP() {
   const dxpw     = document.getElementById("bDXP").checked;
   const bonusexp = document.getElementById("bBonus").checked;
 
-  console.log("Calculating XP…", { base: b, extra, clan, vars_pct, dxpw, bonusexp });
   try {
-    const res    = await fetch("/api/calculate", {
+    // Call back-end calculation
+    const resp = await fetch("/api/calculate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        base_xp: b,
-        add_xp: extra,
-        clan_avatar: clan,
+        base_xp: baseXP,
+        add_xp: addXP,
+        clan_avatar: clanPct * 100,
         vars_pct: vars_pct,
         dxpw: dxpw,
         bonusexp: bonusexp,
@@ -121,151 +142,171 @@ async function calculateXP() {
         urn_enh: false
       })
     });
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    const result = await res.json();
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    const result = await resp.json();
     lastCalc = result;
-    // Compute boost%
-    const boost = b > 0
-      ? ((result.total - b - extra) / b) * 100
+
+    // Summary display
+    const totalXP = result.total;
+    const boostPct = baseXP > 0
+      ? ((totalXP - baseXP - addXP) / baseXP) * 100
       : 0;
-    document.getElementById("pctBoost").innerText = boost.toFixed(2) + "%";
-    document.getElementById("totalXP").innerText = result.total.toFixed(2);
-    console.log("XP calc result:", result);
+    document.getElementById("pctBoost").textContent = boostPct.toFixed(2) + "%";
+    document.getElementById("totalXP").textContent = totalXP.toFixed(2);
+
+    // Show detailed steps
+    document.getElementById("xpSteps").textContent = result.steps.join("\n");
   } catch (err) {
-    console.error("XP calc error:", err);
+    console.error("Calculation error:", err);
     alert("Failed to calculate XP: " + err.message);
   }
 }
 
-// ----- Save Report -----
+
+// ---------------- Save Detailed Report ----------------
 async function saveReport() {
-  if (!lastCalc) return alert("Please calculate XP first!");
-  const user  = document.getElementById("inpUser").value.trim();
-  const skill = document.getElementById("selSkill").value;
-  console.log("Saving report for", user, skill);
+  if (!lastCalc) {
+    alert("Please calculate XP before saving a report.");
+    return;
+  }
   try {
-    const res = await fetch("/api/download/report.txt", {
+    const resp = await fetch("/api/download/report.txt", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: user, skill: skill, steps: lastCalc.steps })
+      body: JSON.stringify({
+        username: document.getElementById("inpUser").value.trim(),
+        skill: document.getElementById("selSkill").value,
+        steps: lastCalc.steps
+      })
     });
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    const blob = await res.blob();
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    const blob = await resp.blob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
     a.href     = url;
     a.download = "rs3_report.txt";
     a.click();
     URL.revokeObjectURL(url);
-    console.log("Report downloaded");
   } catch (err) {
     console.error("Save report error:", err);
     alert("Failed to save report: " + err.message);
   }
 }
 
-// ----- Check for Updates -----
+
+// ---------------- GitHub Update Checker ----------------
 async function checkUpdates() {
-  console.log("Checking for updates…");
   try {
-    const res  = await fetch("/api/updates");
-    const data = await res.json();
+    const resp = await fetch("/api/updates");
+    const data = await resp.json();
     if (data.update_available) {
-      alert(`Update available: ${data.latest}`);
+      alert(`New version available: ${data.latest}`);
     } else {
-      alert(`Up to date: ${data.current}`);
+      alert(`You are up to date (v${data.current})`);
     }
-    console.log("Update check result:", data);
   } catch (err) {
     console.error("Update check error:", err);
-    alert("Failed to check updates");
+    alert("Failed to check for updates.");
   }
 }
 
-// ----- Wiki Lookup -----
+
+// ---------------- Wiki Lookup ----------------
 async function fetchWiki() {
-  const term = prompt("Enter Wiki search term:");
+  const term = prompt("Wiki search term:");
   if (!term) return;
-  console.log("Wiki search for", term);
   try {
-    const r1 = await fetch("/api/wiki/search?term=" + encodeURIComponent(term));
-    const suggestions = await r1.json();
-    if (suggestions.length === 0) { alert("No results found"); return; }
+    // Get suggestions
+    const sresp = await fetch(`/api/wiki/search?term=${encodeURIComponent(term)}`);
+    const suggestions = await sresp.json();
+    if (suggestions.length === 0) {
+      alert("No pages found.");
+      return;
+    }
+    // Let user pick one
     const choice = prompt(
-      "Select a page:\n" +
-      suggestions.map((t,i) => `${i+1}. ${t}`).join("\n")
+      suggestions.map((t,i)=>`${i+1}. ${t}`).join("\n")
     );
     const idx = parseInt(choice) - 1;
     if (isNaN(idx) || idx < 0 || idx >= suggestions.length) return;
     const title = suggestions[idx];
-    console.log("Fetching extract for", title);
-    const r2 = await fetch("/api/wiki/extract?title=" + encodeURIComponent(title));
-    const { extract } = await r2.json();
+
+    // Fetch extract
+    const eres = await fetch(`/api/wiki/extract?title=${encodeURIComponent(title)}`);
+    const { extract } = await eres.json();
+    // Show in pop-up
     const win = window.open("", "wiki", "width=600,height=400");
-    win.document.write(`<html><head><title>${title}</title></head><body><pre>${extract}</pre></body></html>`);
+    win.document.write(`<h2>${title}</h2><pre>${extract}</pre>`);
   } catch (err) {
     console.error("Wiki error:", err);
-    alert("Wiki lookup failed");
+    alert("Wiki lookup failed.");
   }
 }
 
-// ----- Grand Exchange Status -----
+
+// ---------------- Grand Exchange Status ----------------
 async function updateGEStatus() {
   try {
-    const res = await fetch("/api/ge/status");
-    const s   = await res.json();
-    document.getElementById("geStatus").innerText =
-      s.loaded ? `Loaded (${s.count})` : "Loading…";
-    console.log("GE status:", s);
+    const resp = await fetch("/api/ge/status");
+    const { loaded, count } = await resp.json();
+    document.getElementById("geStatus").textContent =
+      loaded ? `Loaded (${count} items)` : "Loading…";
   } catch (err) {
     console.error("GE status error:", err);
   }
 }
 
-// ----- Get GE Suggestions -----
+
+// ---------------- GE Suggestions ----------------
 async function getGESuggestions() {
-  const term = document.getElementById("geSearch").value.trim().toLowerCase();
-  if (term.length < 3) return alert("Enter at least 3 characters");
-  console.log("GE suggest for", term);
+  const term = document.getElementById("geSearch").value.trim();
+  if (term.length < 3) {
+    alert("Enter at least 3 characters.");
+    return;
+  }
   try {
-    const res = await fetch("/api/ge/suggest?term=" + encodeURIComponent(term));
-    if (res.status === 503) return alert("GE still loading, please wait");
-    const list = await res.json();
-    const sel  = document.getElementById("geSelect");
+    const resp = await fetch(`/api/ge/suggest?term=${encodeURIComponent(term)}`);
+    if (resp.status === 503) {
+      alert("GE data still loading; please wait.");
+      return;
+    }
+    const names = await resp.json();
+    const sel   = document.getElementById("geSelect");
     sel.innerHTML = "";
-    list.forEach(name => {
-      const opt = document.createElement("option");
-      opt.value = name;
-      opt.text  = name;
+    names.forEach(name => {
+      const opt = new Option(name, name);
       sel.append(opt);
     });
-    console.log("GE suggestions:", list);
   } catch (err) {
     console.error("GE suggest error:", err);
-    alert("Failed to get suggestions");
+    alert("Failed to get suggestions.");
   }
 }
 
-// ----- Add Item to Cart -----
+
+// ---------------- Add Item to Cart ----------------
 async function addToCart() {
-  const sel  = document.getElementById("geSelect");
-  const name = sel.value;
+  const name = document.getElementById("geSelect").value;
   const qty  = parseInt(document.getElementById("geQty").value) || 1;
-  console.log("Adding to cart:", name, qty);
+  if (!name) {
+    alert("Select an item first.");
+    return;
+  }
   try {
-    const res = await fetch("/api/ge/detail?name=" + encodeURIComponent(name));
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    const { unit } = await res.json();
+    const resp = await fetch(`/api/ge/detail?name=${encodeURIComponent(name)}`);
+    if (!resp.ok) throw new Error(`${resp.status}`);
+    const { unit } = await resp.json();
     const total = unit * qty;
     cart.push({ name, qty, unit, total });
     renderCart();
   } catch (err) {
     console.error("GE detail error:", err);
-    alert("Failed to fetch item price");
+    alert("Failed to fetch item price.");
   }
 }
 
-// ----- Render Cart Table -----
+
+// ---------------- Render Cart Table ----------------
 function renderCart() {
   const tbody = document.querySelector(".ge-table tbody");
   tbody.innerHTML = "";
@@ -274,26 +315,26 @@ function renderCart() {
     const tr = document.createElement("tr");
     ["qty","unit","total"].forEach(key => {
       const td = document.createElement("td");
-      td.innerText = item[key];
+      td.textContent = item[key];
       tr.append(td);
     });
     tbody.append(tr);
     grand += item.total;
   });
-  document.getElementById("geGrandTotal").innerText = grand;
+  document.getElementById("geGrandTotal").textContent = grand;
 }
 
-// ----- Show Receipt -----
+
+// ---------------- Show Receipt ----------------
 function showReceipt() {
-  console.log("Displaying receipt…");
+  if (cart.length === 0) {
+    alert("Cart is empty.");
+    return;
+  }
   const win = window.open("", "receipt", "width=600,height=400");
-  let html = `
-    <html><head><title>Receipt</title></head><body>
-      <h3>Grand Exchange Receipt</h3>
-      <table border="1" cellpadding="5" cellspacing="0">
-        <thead><tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
-        <tbody>
-  `;
+  let html = `<h2>Grand Exchange Receipt</h2>
+    <table border="1" cellpadding="5" cellspacing="0">
+      <thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>`;
   cart.forEach(it => {
     html += `<tr>
       <td>${it.name}</td>
@@ -303,7 +344,6 @@ function showReceipt() {
     </tr>`;
   });
   html += `</tbody></table>
-      <p><strong>Grand Total:</strong> ${document.getElementById("geGrandTotal").innerText}</p>
-    </body></html>`;
+    <h3>Grand Total: ${document.getElementById("geGrandTotal").textContent}</h3>`;
   win.document.write(html);
 }

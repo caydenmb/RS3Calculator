@@ -1,114 +1,237 @@
+/* static/css/style.css */
+
+/*==========================================
+  Root variables for colors, fonts, spacing
+============================================*/
 :root {
-  --bg:      #121212;
-  --card-bg: #1e1e1e;
-  --text:    #e0e0e0;
-  --accent:  #bb86fc;
-  --accent2: #6200ee;
-  --border:  #333;
-  --radius:  12px;
-  --shadow:  0 4px 20px rgba(0,0,0,0.6);
+  --font-family: 'Inter', sans-serif;
+  --color-bg:        #f9fafb;   /* light background */
+  --color-card:      #ffffff;   /* card background */
+  --color-text:      #1f2937;   /* dark gray text */
+  --color-subtext:   #4b5563;   /* medium gray text */
+  --color-primary:   #3b82f6;   /* blue */
+  --color-primary-hover: #2563eb; /* darker blue */
+  --color-border:    #e5e7eb;   /* light gray border */
+  --color-input-bg:  #ffffff;
+  --color-input-border: #d1d5db;
+  --color-result-bg: #f3f4f6;
+  --radius:          0.5rem;    /* rounded corners */
+  --spacing:         1rem;
+  --transition:      0.2s ease-in-out;
 }
-* { box-sizing: border-box; margin:0; padding:0; }
+
+/*==================
+  Base page styles
+====================*/
+* {
+  box-sizing: border-box;
+}
 body {
-  font-family: 'Inter', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  line-height: 1.4;
+  margin: 0;
+  font-family: var(--font-family);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
 }
+h1, h2, h3 {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+p, li, label {
+  margin: 0.25rem 0;
+  color: var(--color-text);
+}
+ul {
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+}
+
+/*==================
+  Header styles
+====================*/
 .app-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 2rem;
-  background: var(--card-bg);
-  box-shadow: var(--shadow);
+  padding: var(--spacing);
+  background-color: var(--color-card);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
-.logo { font-weight: 700; font-size: 1.5rem; }
-.header-actions .btn { margin-left: 0.5rem; }
+.logo {
+  font-size: 1.5rem;
+  color: var(--color-primary);
+}
+.header-actions .btn {
+  margin-left: 0.5rem;
+}
+
+/*==================
+  Main grid layout
+====================*/
 .app-main {
   display: grid;
-  gap: 2rem;
-  padding: 2rem;
-  grid-template-columns: repeat(auto-fit, minmax(320px,1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--spacing);
+  padding: var(--spacing);
 }
+
+/*==================
+  Card container
+====================*/
 .card {
-  background: var(--card-bg);
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
+  padding: var(--spacing);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
-h2 { margin-bottom: 1rem; font-weight: 600; }
-.form-group {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  flex-wrap: wrap;
+.card h2 {
+  margin-bottom: var(--spacing);
+  font-size: 1.25rem;
 }
-.form-group label {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  font-weight: 500;
-}
-.form-group input,
-.form-group select {
-  margin-top: 0.25rem;
-  padding: 0.75rem;
-  background: #2a2a2a;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
-}
-.checkbox-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px,1fr));
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.75rem;
-}
-.checkbox-grid legend {
-  padding: 0 0.5rem;
-  font-weight: 500;
-}
+
+/*==================
+  Buttons
+====================*/
 .btn {
-  padding: 0.75rem 1.25rem;
-  border: none;
+  font-family: var(--font-family);
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  color: var(--color-text);
   border-radius: var(--radius);
   cursor: pointer;
-  background: var(--card-bg);
-  color: var(--text);
-  font-weight: 500;
-  transition: background 0.2s;
+  transition: background-color var(--transition), border-color var(--transition);
 }
-.btn:hover { background: #2f2f2f; }
+.btn:hover {
+  background-color: var(--color-result-bg);
+}
 .btn-primary {
-  background: var(--accent);
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
   color: #fff;
 }
 .btn-primary:hover {
-  background: var(--accent2);
+  background-color: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
 }
-.btn-group {
+
+/*==================
+  Form groups & inputs
+====================*/
+.form-group {
   display: flex;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: var(--spacing);
+  margin-bottom: var(--spacing);
 }
-.result-list p,
-.result-list li {
-  margin: 0.5rem 0;
+.form-group label {
+  flex: 1 1 150px;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
 }
+.input {
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  background-color: var(--color-input-bg);
+}
+
+/*==================
+  Slider + live value
+====================*/
+.slider-with-value {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.slider {
+  flex: 1;
+}
+output {
+  min-width: 3rem;
+  text-align: right;
+  font-weight: 600;
+}
+
+/*==================
+  Checkbox grid
+====================*/
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--spacing);
+  margin-bottom: var(--spacing);
+}
+.checkbox-grid label {
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+}
+.checkbox-grid input {
+  margin-right: 0.5rem;
+}
+
+/*==================
+  Result lists & stats
+====================*/
+.result-list, .stats {
+  background-color: var(--color-result-bg);
+  padding: var(--spacing);
+  border-radius: var(--radius);
+  margin-bottom: var(--spacing);
+}
+.result-list li, .stats p {
+  font-size: 1rem;
+  color: var(--color-text);
+}
+.stats strong {
+  color: var(--color-primary);
+}
+
+/*==================
+  Steps preformatted block
+====================*/
+.xp-steps {
+  background-color: #eef2f7;
+  padding: var(--spacing);
+  border-radius: var(--radius);
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+}
+
+/*==================
+  GE table
+====================*/
 .ge-table {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--spacing);
 }
-.ge-table th,
-.ge-table td {
-  border-bottom: 1px solid var(--border);
+.ge-table th, .ge-table td {
   padding: 0.5rem;
+  border: 1px solid var(--color-border);
   text-align: left;
+  font-size: 0.9rem;
+}
+.ge-table thead {
+  background-color: var(--color-result-bg);
+}
+
+/*==================
+  Responsive tweaks
+====================*/
+@media (max-width: 600px) {
+  .app-main {
+    grid-template-columns: 1fr;
+  }
+  .form-group {
+    flex-direction: column;
+  }
 }
