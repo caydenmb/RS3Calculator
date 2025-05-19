@@ -12,15 +12,15 @@ from flask import (
     Flask, request, jsonify, send_file,
     render_template, abort
 )
-from flask_cors import CORS
+# if you still need CORS, ensure flask-cors is in requirements.txt
+from flask_cors import CORS  
 
 # --------------------
 # App & Logger Setup
 # --------------------
 app = Flask(__name__)
-CORS(app)  # allow cross‐origin for JS
+CORS(app)  # remove this line if not using cross‐origin requests
 
-# Rotating file handler (max 1MB, 3 backups)
 file_handler = RotatingFileHandler('rs3calc.log', maxBytes=1_000_000, backupCount=3)
 file_formatter = logging.Formatter('[%(asctime)s] %(message)s')
 file_handler.setFormatter(file_formatter)
@@ -33,7 +33,6 @@ class CacheHandler(logging.Handler):
     def emit(self, record):
         msg = self.format(record)
         log_cache.append(msg)
-        # keep last 500 lines
         if len(log_cache) > 500:
             log_cache.pop(0)
 
@@ -45,7 +44,6 @@ app.logger.addHandler(cache_handler)
 # -----------------------
 # Constants & Shared Data
 # -----------------------
-# Skill list must match front‐end SKILLS[]
 SKILLS = [
     "Overall","Attack","Defence","Strength","Constitution","Ranged","Prayer","Magic",
     "Cooking","Woodcutting","Fletching","Fishing","Firemaking","Crafting","Smithing",
@@ -53,10 +51,9 @@ SKILLS = [
     "Construction","Summoning","Dungeoneering","Divination","Invention","Archaeology"
 ]
 
-# Grand Exchange preload state
 ge_data = {
     'loaded': False,
-    'items': [],       # list of dict{'id','name'}
+    'items': [],
     'timestamp': 0
 }
 
@@ -68,7 +65,6 @@ def ge_preload():
     """Background thread: fetch all GE items via secure.runescape.com API."""
     app.logger.info("GE preload starting…")
     items = []
-    # categories 0–4 cover all; letters a–z
     for cat in range(5):
         for letter in 'abcdefghijklmnopqrstuvwxyz':
             page = 1
@@ -97,8 +93,11 @@ def ge_preload():
     app.logger.info(f"GE preload complete: {len(items)} items")
 
 
-# start preload in daemon thread
-threading.Thread(target=ge_preload, daemon=True).start()
+@app.before_first_request
+def kick_off_ge_preload():
+    """Under Gunicorn or flask run, start GE-preload on first request."""
+    t = threading.Thread(target=ge_preload, daemon=True)
+    t.start()
 
 
 # -------------------
@@ -106,7 +105,6 @@ threading.Thread(target=ge_preload, daemon=True).start()
 # -------------------
 @app.route('/')
 def index():
-    """Serve main HTML page."""
     return render_template('index.html')
 
 
@@ -115,7 +113,6 @@ def index():
 # -------------------
 @app.route('/api/logs')
 def api_logs():
-    """Return last ~500 log lines as JSON array."""
     return jsonify(log_cache)
 
 
@@ -124,7 +121,6 @@ def api_logs():
 # -------------------
 @app.route('/api/hiscore')
 def api_hiscore():
-    """Fetch a single skill line from RS3 hiscore index_lite."""
     user = request.args.get('username', '')
     skill = request.args.get('skill', 'Overall')
     if not user:
@@ -136,11 +132,7 @@ def api_hiscore():
         lines = r.text.splitlines()
         idx = SKILLS.index(skill)
         rank, level, xp = lines[idx].split(',')
-        return jsonify({
-            'rank': int(rank),
-            'level': int(level),
-            'xp': int(xp)
-        })
+        return jsonify({'rank': int(rank), 'level': int(level), 'xp': int(xp)})
     except Exception as e:
         app.logger.error(f"Hiscore fetch error for {user}/{skill}: {e}")
         abort(502, str(e))
@@ -151,7 +143,6 @@ def api_hiscore():
 # ----------------------
 @app.route('/api/calculate', methods=['POST'])
 def api_calculate():
-    """Apply all boosts in order and return total + step‐by‐step math."""
     data = request.get_json() or {}
     base = float(data.get('base_xp', 0))
     add_xp = float(data.get('add_xp', 0))
@@ -164,17 +155,14 @@ def api_calculate():
     xp = base
     steps.append(f"Base XP: {xp:.2f}")
 
-    # additional flat XP from percent
     if add_xp:
         xp += add_xp
         steps.append(f"Additional XP: {add_xp:.2f}")
 
-    # clan avatar boost
     clan_boost = xp * (clan_pct / 100)
     xp += clan_boost
     steps.append(f"Clan Avatar ({clan_pct:.1f}%): {clan_boost:.2f}")
 
-    # named boosts mapping (percent)
     boost_map = {
         'Relic Powers':2, 'Incense Sticks':2, 'Wisdom Aura':2,
         'Desert Pantheon':3, 'Pulse Core':1, 'Cinder Core':1.5,
@@ -188,13 +176,11 @@ def api_calculate():
             xp += boost_amt
             steps.append(f"{name} ({pct}%): {boost_amt:.2f}")
 
-    # double XP
     if dxpw:
         boost_amt = xp
         xp *= 2
         steps.append(f"Double XP: +{boost_amt:.2f}")
 
-    # generic bonus XP (5%)
     if bonusexp:
         pct = 5
         boost_amt = xp * (pct/100)
@@ -210,7 +196,6 @@ def api_calculate():
 # -----------------------
 @app.route('/api/download/report.txt', methods=['POST'])
 def download_report():
-    """Generate a text report with full math steps for user to save."""
     data = request.get_json() or {}
     user = data.get('username', 'Unknown')
     skill = data.get('skill', 'Overall')
@@ -238,7 +223,6 @@ def download_report():
 # --------------------------
 @app.route('/api/updates')
 def api_updates():
-    """Compare local version to GitHub HEAD SHA."""
     current_version = "v4.4"
     try:
         r = requests.get(
@@ -263,7 +247,6 @@ def api_updates():
 # ----------------
 @app.route('/api/wiki/search')
 def wiki_search():
-    """Fuzzy search RS3 Wiki titles via opensearch."""
     term = request.args.get('term', '')
     params = {
         'action': 'opensearch',
@@ -274,13 +257,12 @@ def wiki_search():
     }
     r = requests.get("https://runescape.wiki/api.php", params=params, timeout=5)
     r.raise_for_status()
-    suggestions = r.json()[1]  # second element is list of titles
+    suggestions = r.json()[1]
     return jsonify(suggestions)
 
 
 @app.route('/api/wiki/extract')
 def wiki_extract():
-    """Fetch the intro extract for a given Wiki title."""
     title = request.args.get('title', '')
     params = {
         'action': 'query',
@@ -293,7 +275,6 @@ def wiki_extract():
     r = requests.get("https://runescape.wiki/api.php", params=params, timeout=5)
     r.raise_for_status()
     pages = r.json().get('query', {}).get('pages', {})
-    # extract text from the only page in the dict
     extract = next(iter(pages.values())).get('extract', '')
     return jsonify({'extract': extract})
 
@@ -303,7 +284,6 @@ def wiki_extract():
 # ------------------------
 @app.route('/api/ge/status')
 def ge_status():
-    """Return preload status and total count of GE items."""
     return jsonify({
         'loaded': ge_data['loaded'],
         'count': len(ge_data['items'])
@@ -312,7 +292,6 @@ def ge_status():
 
 @app.route('/api/ge/suggest')
 def ge_suggest():
-    """Return up to 50 item‐name suggestions containing the term."""
     term = request.args.get('term', '').lower()
     if not ge_data['loaded']:
         return ('', 503)
@@ -325,11 +304,9 @@ def ge_suggest():
 
 @app.route('/api/ge/detail')
 def ge_detail():
-    """Fetch live price for a single GE item via its ID."""
     name = request.args.get('name', '')
     if not ge_data['loaded']:
         abort(503)
-    # find exact match
     found = next((it for it in ge_data['items'] if it['name'] == name), None)
     if not found:
         abort(404, "Item not found")
