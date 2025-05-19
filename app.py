@@ -1,22 +1,16 @@
 # app.py
 #!/usr/bin/env python3
-"""
-RS3 XP Calculator v4.4 – Web Edition
-Flask back-end serving the same logic you had in Tkinter:
- - Hiscores fetch
- - XP calculation with all boosts, portables, urns
- - RuneScape Wiki fuzzy lookup + extract
- - GitHub update checker
- - Grand Exchange preload + suggestions + price lookup
- - In-memory logging, and report/log download endpoints
- - Periodic GE reload every 12 hours
-"""
 
+import os
+import io
+import time
+import json
+import threading
+import traceback
 from flask import Flask, jsonify, request, render_template, send_file, abort
 from jinja2 import TemplateNotFound
-import threading, traceback, io, time, requests
+import requests
 
-# Initialize Flask, pointing at the correct template & static folders
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 # -------------------------------------
@@ -40,53 +34,48 @@ def ge_preload():
     """Fetch the entire GE catalogue, skipping invalid buckets, logging every failure."""
     global ge_all_items, ge_loaded
     log("Starting full GE item preload…")
-    for cat in range(38):
+    ITEMS_PER_PAGE = 12
+    MAX_CATEGORY = 37
+
+    temp = {}
+    for cat in range(MAX_CATEGORY + 1):
+        url_cat = f"https://secure.runescape.com/m=itemdb_rs/api/catalogue/category.json?category={cat}"
         try:
-            r = requests.get(
-                f"http://services.runescape.com/m=itemdb_rs/api/catalogue/category.json?category={cat}",
-                timeout=10
-            )
+            r = requests.get(url_cat, timeout=10)
             r.raise_for_status()
-            alpha_map = {e["letter"]: e["items"] for e in r.json().get("alpha", [])}
-        except Exception:
-            log(f"Category {cat} alpha fetch failed:\n{traceback.format_exc()}")
+            data = r.json()
+        except (requests.HTTPError, ValueError, json.JSONDecodeError) as e:
+            log(f"Category {cat} fetch failed: {e}")
             continue
 
-        for letter, count in alpha_map.items():
+        for bucket in data.get("alpha", []):
+            letter = bucket.get("letter", "")
+            count  = bucket.get("items", 0)
             if not (letter.isalpha() and len(letter) == 1):
                 log(f"Skipping non-alphabetic bucket '{letter}'")
                 continue
-            if count <= 0:
-                continue
-
-            pages = (count + 11) // 12
-            for page in range(1, pages + 1):
+            pages = (count + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+            for p in range(1, pages + 1):
+                url_page = (
+                    "https://secure.runescape.com/m=itemdb_rs/api/catalogue/items.json"
+                    f"?category={cat}&alpha={letter}&page={p}"
+                )
                 try:
-                    r2 = requests.get(
-                        f"http://services.runescape.com/m=itemdb_rs/api/catalogue/items.json"
-                        f"?category={cat}&alpha={letter}&page={page}",
-                        timeout=10
-                    )
+                    r2 = requests.get(url_page, timeout=10)
                     r2.raise_for_status()
-                except Exception:
-                    log(f"Cat {cat} letter {letter} page {page} HTTP error:\n{traceback.format_exc()}")
+                    page_data = r2.json()
+                except (requests.HTTPError, ValueError, json.JSONDecodeError) as e:
+                    log(f"Cat {cat} letter {letter} page {p} JSON error: {e}")
                     continue
 
-                try:
-                    data = r2.json()
-                except Exception as je:
-                    log(f"Cat {cat} letter {letter} page {page} JSON decode error: {je}")
-                    continue
+                for it in page_data.get("items", []):
+                    name = it.get("name")
+                    if name:
+                        temp[name] = it.get("id")
 
-                for it in data.get("items", []):
-                    try:
-                        ge_all_items[it["name"]] = it["id"]
-                    except Exception:
-                        log(f"Cat {cat} letter {letter} page {page} item parse error:\n{traceback.format_exc()}")
-
+    ge_all_items = temp
     ge_loaded = True
-    count = len(ge_all_items)
-    log(f"Completed preload: {count} items cached")
+    log(f"Completed preload: {len(ge_all_items)} items cached")
 
 # Start initial preload
 threading.Thread(target=ge_preload, daemon=True).start()
@@ -95,7 +84,6 @@ threading.Thread(target=ge_preload, daemon=True).start()
 # Periodic reload every 12 hours
 # -------------------------------------
 def schedule_periodic_ge_preload():
-    """Every 12h, re-run the full GE preload to refresh IDs."""
     log("Scheduling periodic GE preload every 12 hours")
     while True:
         time.sleep(12 * 3600)
@@ -131,9 +119,10 @@ def fetch_hiscore_xp(username: str, skill: str):
 # XP Calculation
 # -------------------------------------
 def calculate_xp(data):
-    b = float(data["base_xp"])
-    extra = float(data["add_xp"])
+    b = float(data.get("base_xp", 0))
+    extra = float(data.get("add_xp", 0))
     steps = []
+
     def rec(s):
         steps.append(s)
         log(s)
@@ -142,46 +131,41 @@ def calculate_xp(data):
     rec(f"Flat add XP: {extra:.2f}")
     bonus = 0.0
 
-    # Clan Avatar
-    pct = data["clan_avatar"]/100.0
+    pct = data.get("clan_avatar", 0.0) / 100.0
     inc = pct * b; bonus += inc
     rec(f"Clan Avatar: {pct:.3f} * {b:.2f} = {inc:.2f}")
 
-    # % boosts
     boost_map = {
         "Relic Powers":0.02,"Incense Sticks":0.02,"Wisdom Aura":0.025,
         "Desert Pantheon":0.10,"Pulse Core":0.10,"Cinder Core":0.10,
         "Coin of Enchantment":0.02,"Sceptre of Enchantment":0.04,"Premier Artifact":0.10
     }
     for name, p in boost_map.items():
-        if data["vars_pct"].get(name):
+        if data.get("vars_pct", {}).get(name):
             inc = p * b; bonus += inc
             rec(f"{name}: {p:.3f} * {b:.2f} = {inc:.2f}")
 
-    # Double & Bonus XP
-    if data["dxpw"]:
+    if data.get("dxpw"):
         inc = b; bonus += inc
         rec(f"Double XP Weekend: 1.000 * {b:.2f} = {inc:.2f}")
-    if data["bonusexp"]:
+    if data.get("bonusexp"):
         inc = b; bonus += inc
         rec(f"Bonus Experience: 1.000 * {b:.2f} = {inc:.2f}")
 
-    # Portables
     port_map = {
         "Brazier":0.10,"Crafter":0.10,"Fletcher":0.10,
         "Range":0.21,"Well":0.10,"Workbench":0.10
     }
     for name, p in port_map.items():
-        if data["port_vars"].get(name):
-            mult = 2.0 if data["dxpw"] else 1.0
+        if data.get("port_vars", {}).get(name):
+            mult = 2.0 if data.get("dxpw") else 1.0
             inc = p * mult * b; bonus += inc
             rec(f"{name}: {(p*mult):.3f} * {b:.2f} = {inc:.2f}")
 
-    # Urns
-    if data["urn"]:
-        pct_u = 0.25 if data["urn_enh"] else 0.20
+    if data.get("urn"):
+        pct_u = 0.25 if data.get("urn_enh") else 0.20
         inc = pct_u * b; bonus += inc
-        label = "Urn + Enhancer" if data["urn_enh"] else "Urn"
+        label = "Urn + Enhancer" if data.get("urn_enh") else "Urn"
         rec(f"{label}: {pct_u:.3f} * {b:.2f} = {inc:.2f}")
 
     total = b + extra + bonus
@@ -211,14 +195,14 @@ class Wiki:
         return next(iter(pages.values())).get("extract","")
 
 # -------------------------------------
-# Routes (with TemplateNotFound guard)
+# Routes
 # -------------------------------------
 @app.route("/")
 def index():
     try:
         return render_template("index.html")
     except TemplateNotFound:
-        log("index.html not found in templates/")
+        log("index.html not found")
         return "<h1>Template missing!</h1>", 200
 
 @app.route("/api/logs")
@@ -260,6 +244,9 @@ def api_wiki_extract():
         return jsonify({"extract": Wiki.extract(title, chars=5000)})
     except:
         return jsonify({"extract": ""})
+
+GITHUB_REPO_TAGS = "https://api.github.com/repos/caydenmb/RS3Calculator/tags"
+CURRENT_VERSION = "v4.4"
 
 @app.route("/api/updates")
 def api_updates():
@@ -303,7 +290,7 @@ def api_ge_detail():
         return jsonify({"price_str":"0","unit":0}), 404
     try:
         r = requests.get(
-            f"http://services.runescape.com/m=itemdb_rs/api/catalogue/detail.json?item={iid}",
+            f"https://secure.runescape.com/m=itemdb_rs/api/catalogue/detail.json?item={iid}",
             timeout=10
         )
         r.raise_for_status()
@@ -354,4 +341,4 @@ def download_report():
     )
 
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+    app.run(port=int(os.environ.get("PORT", 5000)), debug=True)
